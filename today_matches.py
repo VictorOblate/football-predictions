@@ -7,12 +7,13 @@ import requests
 import csv
 import json
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import time
 import os
+
 # Configuration
-API_KEY = os.getenv("FOOTYSTATSAPI")
+API_KEY = os.getenv("FOOTYSTATSAPI", "test85g57")  # Default to test key if not set
 BASE_URL = "https://api.footystats.org"
 
 # ==================== ALLOWED LEAGUES FILTER ====================
@@ -72,7 +73,7 @@ class FootyStatsAPI:
         self.request_count = 0
         self.max_retries = 3
 
-    def fetch_todays_matches(self, timezone: str = "Etc/UTC", date: Optional[str] = None, page: int = 1) -> Optional[Dict]:
+    def fetch_todays_matches(self, timezone: str = "UTC", date: Optional[str] = None, page: int = 1) -> Optional[Dict]:
         """Fetch matches from FootyStats API for a given date"""
         url = f"{self.base_url}/todays-matches"
         params = {"key": self.api_key, "timezone": timezone, "page": page}
@@ -82,6 +83,10 @@ class FootyStatsAPI:
         for attempt in range(self.max_retries):
             try:
                 self.request_count += 1
+                # Debug: Print the actual params being sent
+                import requests
+                prepared = requests.Request('GET', url, params=params).prepare()
+                # print(f"DEBUG: URL = {prepared.url}")  # Uncomment for debugging
                 response = requests.get(url, params=params, timeout=30)
                 response.raise_for_status()
                 data = response.json()
@@ -344,8 +349,8 @@ def main():
     
     all_matches_combined = []
     dates_info = []
-    base_day = datetime.now()
-    day_labels = ['Today', 'Tomorrow', 'Day After Tomorrow']
+    base_day = datetime.now(timezone.utc)  # ✓ Use UTC timezone to match API
+    day_labels = ['Today', 'Tomorrow', 'Day+2', 'Day+3', 'Day+4', 'Day+5', 'Day+6']
     
     for offset_day, label in enumerate(day_labels):
         fetch_date = (base_day + timedelta(days=offset_day)).strftime('%Y-%m-%d')
@@ -358,7 +363,7 @@ def main():
         
         while True:
             print(f"   Page {page}...", end=" ")
-            data = api_client.fetch_todays_matches("Etc/UTC", fetch_date, page)
+            data = api_client.fetch_todays_matches("UTC", fetch_date, page)
             if not data:
                 print("Failed")
                 break

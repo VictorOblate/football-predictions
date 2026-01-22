@@ -155,14 +155,23 @@ for idx, row in df.iterrows():
     
     # Skip if we don't have data for both teams
     if home_id not in team_data_cache or away_id not in team_data_cache:
-        print(f"⚠ Match {match_id}: Missing team data (home: {home_id}, away: {away_id})")
-        skipped += 1
-        continue
-    
-    home_data = team_data_cache[home_id]
-    away_data = team_data_cache[away_id]
+        print(f"⚠ Match {match_id}: Missing team data (home: {home_id}, away: {away_id}) - Using defaults")
+        # Don't skip! Use None values for team data (we'll handle defaults below)
+        home_data = team_data_cache.get(home_id)
+        away_data = team_data_cache.get(away_id)
+    else:
+        home_data = team_data_cache[home_id]
+        away_data = team_data_cache[away_id]
     
     try:
+        # Safe extraction for home/away data (handle None values)
+        home_stats = home_data['stats'] if home_data and isinstance(home_data, dict) else {}
+        away_stats = away_data['stats'] if away_data and isinstance(away_data, dict) else {}
+        
+        # Get team names from live.csv first, fallback to team_data_cache if available
+        home_name = row.get('home_name', '') or (home_data.get('name', '') if home_data else '')
+        away_name = row.get('away_name', '') or (away_data.get('name', '') if away_data else '')
+        
         # Normalize potential values (should be 0-100)
         o25_pot = normalize_probability(row.get('o25_potential', 50), expected_range_0_100=True)
         o15_pot = normalize_probability(row.get('o15_potential', 50), expected_range_0_100=True)
@@ -187,13 +196,13 @@ for idx, row in df.iterrows():
             if isinstance(league_stats, dict) and 'seasonAVG_overall' in league_stats:
                 league_avg_goals = league_stats['seasonAVG_overall']
         
-        # Calculate shots accuracy
-        home_shots_avg = home_data['stats'].get('shotsAVG_home', 1)
-        home_sot_avg = home_data['stats'].get('shotsOnTargetAVG_home', 0)
+        # Calculate shots accuracy (with safe defaults)
+        home_shots_avg = home_stats.get('shotsAVG_home', 1)
+        home_sot_avg = home_stats.get('shotsOnTargetAVG_home', 0)
         home_shots_accuracy = home_sot_avg / max(home_shots_avg, 1) if home_shots_avg > 0 else 0.33
         
-        away_shots_avg = away_data['stats'].get('shotsAVG_away', 1)
-        away_sot_avg = away_data['stats'].get('shotsOnTargetAVG_away', 0)
+        away_shots_avg = away_stats.get('shotsAVG_away', 1)
+        away_sot_avg = away_stats.get('shotsOnTargetAVG_away', 0)
         away_shots_accuracy = away_sot_avg / max(away_shots_avg, 1) if away_shots_avg > 0 else 0.33
         
         # Extract features
@@ -206,32 +215,32 @@ for idx, row in df.iterrows():
             'league_id': league_id,
             
             # Team names (optional, for reference)
-            'home_team_name': home_data.get('name', ''),
-            'away_team_name': away_data.get('name', ''),
+            'home_team_name': home_name,
+            'away_team_name': away_name,
             
             # CTMCL and market data (from live.csv)
             'CTMCL': row.get('CTMCL', 2.5),
             'avg_goals_market': avg_goals_market,
             
             # Pre-match xG
-            'team_a_xg_prematch': row.get('team_a_xg_prematch', home_data['stats'].get('xg_for_avg_home', 0)),
-            'team_b_xg_prematch': row.get('team_b_xg_prematch', away_data['stats'].get('xg_for_avg_away', 0)),
+            'team_a_xg_prematch': row.get('team_a_xg_prematch', home_stats.get('xg_for_avg_home', 0)),
+            'team_b_xg_prematch': row.get('team_b_xg_prematch', away_stats.get('xg_for_avg_away', 0)),
             
             # Pre-match PPG
-            'pre_match_home_ppg': home_data['stats'].get('seasonPPG_home', 0),
-            'pre_match_away_ppg': away_data['stats'].get('seasonPPG_away', 0),
+            'pre_match_home_ppg': home_stats.get('seasonPPG_home', 0),
+            'pre_match_away_ppg': away_stats.get('seasonPPG_away', 0),
             
             # XG averages
-            'home_xg_avg': home_data['stats'].get('xg_for_avg_home', 0),
-            'away_xg_avg': away_data['stats'].get('xg_for_avg_away', 0),
+            'home_xg_avg': home_stats.get('xg_for_avg_home', 0),
+            'away_xg_avg': away_stats.get('xg_for_avg_away', 0),
             
             # XG momentum (approximation: recent - overall)
             'home_xg_momentum': 0,  # Would need historical data
             'away_xg_momentum': 0,
             
             # Goals conceded averages
-            'home_goals_conceded_avg': home_data['stats'].get('seasonConcededAVG_home', 0),
-            'away_goals_conceded_avg': away_data['stats'].get('seasonConcededAVG_away', 0),
+            'home_goals_conceded_avg': home_stats.get('seasonConcededAVG_home', 0),
+            'away_goals_conceded_avg': away_stats.get('seasonConcededAVG_away', 0),
             
             # Over/under potentials (normalized to 0-100)
             'o25_potential': o25_pot,
@@ -242,20 +251,20 @@ for idx, row in df.iterrows():
             'away_shots_accuracy_avg': away_shots_accuracy,
             
             # Dangerous attacks
-            'home_dangerous_attacks_avg': home_data['stats'].get('dangerous_attacks_avg_home', 0),
-            'away_dangerous_attacks_avg': away_data['stats'].get('dangerous_attacks_avg_away', 0),
+            'home_dangerous_attacks_avg': home_stats.get('dangerous_attacks_avg_home', 0),
+            'away_dangerous_attacks_avg': away_stats.get('dangerous_attacks_avg_away', 0),
             
             # H2H (not available in lastx endpoint, default to 0)
             'h2h_total_goals_avg': 0,
             
             # Form points
-            'home_form_points': home_data['stats'].get('seasonPPG_home', 0) * 5,
-            'away_form_points': away_data['stats'].get('seasonPPG_away', 0) * 5,
+            'home_form_points': home_stats.get('seasonPPG_home', 0) * 5,
+            'away_form_points': away_stats.get('seasonPPG_away', 0) * 5,
             
-            # Elo diff (approximation using performance rank)
-            'home_elo': 1500 + (home_data.get('performance_rank', 0) * 10),
-            'away_elo': 1500 + (away_data.get('performance_rank', 0) * 10),
-            'elo_diff': (1500 + (home_data.get('performance_rank', 0) * 10)) - (1500 + (away_data.get('performance_rank', 0) * 10)),
+            # Elo diff (approximation using performance rank) - with safe defaults
+            'home_elo': 1500 + (home_data.get('performance_rank', 0) if home_data else 0) * 10,
+            'away_elo': 1500 + (away_data.get('performance_rank', 0) if away_data else 0) * 10,
+            'elo_diff': ((1500 + (home_data.get('performance_rank', 0) if home_data else 0) * 10) - (1500 + (away_data.get('performance_rank', 0) if away_data else 0) * 10)),
             
             # League average goals
             'league_avg_goals': league_avg_goals,
